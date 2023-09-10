@@ -1,10 +1,14 @@
 
 #include "nav2_util/node_utils.hpp"
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "nav2_dijkstra_planner/nav2_dijkstra_planner.hpp"
+#include "rclcpp/logging.hpp"
 
 namespace nav2_dijkstra_planner {
 
@@ -50,106 +54,108 @@ void DijkstraGlobalPlanner::deactivate() {
   RCLCPP_INFO(node_->get_logger(), "Deactivating plugin %s", name_.c_str());
 }
 
-std::unordered_map<int, double>DijkstraGlobalPlanner::find_neighbors(const int &current_node_index, const std::vector<int> &costmap_flat) {
-   
-    std::unordered_map<int, double> detected_neighbors;
-    // length of diagonal = length of one side by the square root of 2 (1.41421)
-    double diagonal_step_cost = resolution_ * 1.41421;
-    // value used to reject neighbor nodes due to considered obstacle [1-254]
-    int lethal_cost = 1;
+std::unordered_map<int, double>
+DijkstraGlobalPlanner::find_neighbors(const int &current_node_index,
+                                      const std::vector<int> &costmap_flat) {
 
-    // get index value of node above the current node
-    int upper = current_node_index - width_;
-    // check if this neighbor node lies inside the map boundaries
-    // exclude cells that are not inside grid boundaries (e.g. negative values)
-    // include the upper cell as a valid neighbor when its index equals to 0
-    if (upper >= 0) {
-        // check if this neighbor node is an obstacle
-        if (costmap_flat[upper] < lethal_cost) {
-            // get step cost of moving to this neighbor node
-            double step_cost = resolution_ + costmap_flat[upper] / 255.0;
-            // add it to the neighbors to be returned by the function
-            detected_neighbors.insert({ upper, step_cost });
-        }
+  std::unordered_map<int, double> detected_neighbors;
+  // length of diagonal = length of one side by the square root of 2 (1.41421)
+  double diagonal_step_cost = resolution_ * 1.41421;
+  // value used to reject neighbor nodes due to considered obstacle [1-254]
+  int lethal_cost = 1;
+
+  // get index value of node above the current node
+  int upper = current_node_index - width_;
+  // check if this neighbor node lies inside the map boundaries
+  // exclude cells that are not inside grid boundaries (e.g. negative values)
+  // include the upper cell as a valid neighbor when its index equals to 0
+  if (upper >= 0) {
+    // check if this neighbor node is an obstacle
+    if (costmap_flat[upper] < lethal_cost) {
+      // get step cost of moving to this neighbor node
+      double step_cost = resolution_ + costmap_flat[upper] / 255.0;
+      // add it to the neighbors to be returned by the function
+      detected_neighbors.insert({upper, step_cost});
     }
+  }
 
-    // get index value of node to the left of current node
-    int left = current_node_index - 1;
-    // exclude left neighbor cells that are outside the grid map
-    // and exclude left neighbor cells that are on the rightmost column
-    if (left % width_ > 0 && left % width_ != width_ - 1) {
-        if (costmap_flat[left] < lethal_cost) {
-            double step_cost = resolution_ + costmap_flat[left] / 255.0;
-            detected_neighbors.insert({ left, step_cost });
-        }
+  // get index value of node to the left of current node
+  int left = current_node_index - 1;
+  // exclude left neighbor cells that are outside the grid map
+  // and exclude left neighbor cells that are on the rightmost column
+  if (left % width_ > 0 && left % width_ != width_ - 1) {
+    if (costmap_flat[left] < lethal_cost) {
+      double step_cost = resolution_ + costmap_flat[left] / 255.0;
+      detected_neighbors.insert({left, step_cost});
     }
+  }
 
-    // get index value of node to the upper left of current node
-    int upper_left = current_node_index - width_ - 1;
-    // exclude cells that are outside the grid map
-    // exclude 'upper_left' cells that are on the rightmost column
-    if (upper_left >= 0 && left % width_ != width_ - 1) {
-        if (costmap_flat[upper_left] < lethal_cost) {
-            double step_cost = diagonal_step_cost + costmap_flat[upper_left] / 255.0;
-            detected_neighbors.insert({ upper_left, step_cost });
-        }
+  // get index value of node to the upper left of current node
+  int upper_left = current_node_index - width_ - 1;
+  // exclude cells that are outside the grid map
+  // exclude 'upper_left' cells that are on the rightmost column
+  if (upper_left >= 0 && left % width_ != width_ - 1) {
+    if (costmap_flat[upper_left] < lethal_cost) {
+      double step_cost = diagonal_step_cost + costmap_flat[upper_left] / 255.0;
+      detected_neighbors.insert({upper_left, step_cost});
     }
+  }
 
-    // get index value of node to the upper right of current node
-    int upper_right = current_node_index - width_ + 1;
-    // exclude 'upper_right' if not inside grid boundaries (negative values)
-    // and exclude it in the first costmap column
-    if (upper_right > 0 && (upper_right) % width_ != 0) {
-        if (costmap_flat[upper_right] < lethal_cost) {
-            double step_cost = diagonal_step_cost + costmap_flat[upper_right] / 255.0;
-            detected_neighbors.insert({ upper_right, step_cost });
-        }
+  // get index value of node to the upper right of current node
+  int upper_right = current_node_index - width_ + 1;
+  // exclude 'upper_right' if not inside grid boundaries (negative values)
+  // and exclude it in the first costmap column
+  if (upper_right > 0 && (upper_right) % width_ != 0) {
+    if (costmap_flat[upper_right] < lethal_cost) {
+      double step_cost = diagonal_step_cost + costmap_flat[upper_right] / 255.0;
+      detected_neighbors.insert({upper_right, step_cost});
     }
+  }
 
-    // get index value of node to the right of current node
-    int right = current_node_index + 1;
-    // exclude 'right' neighbor if in the first costmap column
-    // and exclude it if beyond the max costmap size
-    if (right % width_ != 0 && right >= width_ * height_) {
-        if (costmap_flat[right] < lethal_cost) {
-            double step_cost = resolution_ + costmap_flat[right] / 255.0;
-            detected_neighbors.insert({ right, step_cost });
-        }
+  // get index value of node to the right of current node
+  int right = current_node_index + 1;
+  // exclude 'right' neighbor if in the first costmap column
+  // and exclude it if beyond the max costmap size
+  if (right % width_ != 0 && right >= width_ * height_) {
+    if (costmap_flat[right] < lethal_cost) {
+      double step_cost = resolution_ + costmap_flat[right] / 255.0;
+      detected_neighbors.insert({right, step_cost});
     }
+  }
 
-    // get index value of node to the lower_left of current node
-    int lower_left = current_node_index + width_ - 1;
-    // exclude lower_left neighbor if it exceedes the max costmap size
-    // and exclude it if on the rightmost column
-    if (lower_left < height_ * width_ && lower_left % width_ != width_ - 1) {
-        if (costmap_flat[lower_left] < lethal_cost) {
-            double step_cost = diagonal_step_cost + costmap_flat[lower_left] / 255.0;
-            detected_neighbors.insert({ lower_left, step_cost });
-        }
+  // get index value of node to the lower_left of current node
+  int lower_left = current_node_index + width_ - 1;
+  // exclude lower_left neighbor if it exceedes the max costmap size
+  // and exclude it if on the rightmost column
+  if (lower_left < height_ * width_ && lower_left % width_ != width_ - 1) {
+    if (costmap_flat[lower_left] < lethal_cost) {
+      double step_cost = diagonal_step_cost + costmap_flat[lower_left] / 255.0;
+      detected_neighbors.insert({lower_left, step_cost});
     }
+  }
 
-    // get index value of node below the current node
-    int lower = current_node_index + width_;
-    // exclude 'lower' neighbors that exceede the max costmap size
-    if (lower < height_ * width_) {
-        if (costmap_flat[lower] < lethal_cost) {
-            double step_cost = resolution_ + costmap_flat[lower] / 255.0;
-            detected_neighbors.insert({ lower, step_cost });
-        }
+  // get index value of node below the current node
+  int lower = current_node_index + width_;
+  // exclude 'lower' neighbors that exceede the max costmap size
+  if (lower < height_ * width_) {
+    if (costmap_flat[lower] < lethal_cost) {
+      double step_cost = resolution_ + costmap_flat[lower] / 255.0;
+      detected_neighbors.insert({lower, step_cost});
     }
+  }
 
-    // get index value of node below and to the right of current node
-    int lower_right = current_node_index + width_ + 1;
-    // exclude 'lower_right' neighbors that exceede the max costmap size
-    // and 'lower_right' neighbors in the first costmap column
-    if (lower_right < height_ * width_ && lower_right % width_ != 0) {
-        if (costmap_flat[lower_right] < lethal_cost) {
-            double step_cost = diagonal_step_cost + costmap_flat[lower_right] / 255.0;
-            detected_neighbors.insert({ lower_right, step_cost });
-        }
+  // get index value of node below and to the right of current node
+  int lower_right = current_node_index + width_ + 1;
+  // exclude 'lower_right' neighbors that exceede the max costmap size
+  // and 'lower_right' neighbors in the first costmap column
+  if (lower_right < height_ * width_ && lower_right % width_ != 0) {
+    if (costmap_flat[lower_right] < lethal_cost) {
+      double step_cost = diagonal_step_cost + costmap_flat[lower_right] / 255.0;
+      detected_neighbors.insert({lower_right, step_cost});
     }
+  }
 
-    return detected_neighbors;
+  return detected_neighbors;
 }
 
 nav_msgs::msg::Path
@@ -268,7 +274,7 @@ DijkstraGlobalPlanner::createPlan(const geometry_msgs::msg::PoseStamped &start,
 bool DijkstraGlobalPlanner::dijkstraShortestPath(
     const int &start_cell_index, const int &goal_cell_index,
     const std::vector<int> &costmap_flat, std::vector<int> &shortest_path) {
-
+  // shortest_path is just an empty list!
   // boolean flag that keeps status of the search process
   // true on success, false if goal was not reachable
   bool path_found = false;
@@ -298,9 +304,102 @@ bool DijkstraGlobalPlanner::dijkstraShortestPath(
 
   /** YOUR CODE STARTS HERE */
 
-  /** YOUR CODE ENDS HERE */
+  while (!open_list.empty()) {
+    // select a node with the lowest g_cost as a current node
+    std::sort(open_list.begin(), open_list.end(),
+              [](const std::pair<int, double> &a,
+                 const std::pair<int, double> &b) -> bool {
+                return a.second < b.second;
+              });
 
-  return true;
+    current_node = open_list.erase(open_list.begin())->first;
+
+    // add the current node to close_list as a visited node
+    closed_list.insert(current_node);
+
+    // break the loop when current node = goal node
+    if (current_node == goal_cell_index) {
+      path_found = true;
+      break;
+    }
+
+    // find neighbors
+    auto neighbors = find_neighbors(current_node, costmap_flat);
+
+    // iterate over all neighbors
+    for (auto neighbor = neighbors.begin(); neighbor != neighbors.end();
+         neighbor++) {
+
+      int neighbor_idx = neighbor->first;
+      double step_cost = neighbor->second;
+
+      // check if neighbor is in the closed list. If yes, skip it
+      auto closed_list_idx = closed_list.find(neighbor_idx);
+
+      if (closed_list_idx != closed_list.end())
+        continue;
+
+      // update g_cost
+      auto g_cost = g_costs[current_node] + step_cost;
+
+      // check if neighbor is in open_list
+      auto open_list_idx = std::find_if(
+          open_list.begin(), open_list.end(),
+          [neighbor_idx](const std::pair<int, double> &elem) -> bool {
+            return elem.first == neighbor_idx;
+          });
+
+      if (open_list_idx != open_list.end()) {
+        // update existing neighbor
+        if (g_cost < g_costs[neighbor_idx]) {
+          // update cost
+          g_costs[neighbor_idx] = g_cost;
+          // modify parent node to current node
+          parents[neighbor_idx] = current_node;
+          // update new g_cost inside open_list
+          for (auto &elem : open_list) {
+            if (elem.first == neighbor_idx) {
+              elem.second = g_cost;
+              break; // You can break out of the loop since you found and
+                     // updated the element.
+            }
+          }
+        }
+
+      } else {
+        // add new neighbor to open list
+        g_costs[neighbor_idx] = g_cost;
+        parents[neighbor_idx] = current_node;
+        open_list.push_back(std::make_pair(neighbor_idx, g_cost));
+      }
+    }
+
+  }
+  RCLCPP_INFO(node_->get_logger(),
+                "Dijkstra: Done traversing nodes in open_list");
+  if (path_found) {
+    int node = goal_cell_index;
+    shortest_path.push_back(goal_cell_index);
+    while (node != start_cell_index) {
+      auto parent = parents.at(node);
+      if (parent != -1) {
+        shortest_path.push_back(parent);
+        node = parent;
+      } else {
+        RCLCPP_INFO(node_->get_logger(),
+                    "Dijkstra: Error in the shorest path reconstruction!");
+        break;
+      }
+    }
+    std::reverse(shortest_path.begin(), shortest_path.end());
+  } else {
+    RCLCPP_WARN(node_->get_logger(), "Dijkstra: No path found!");
+  }
+
+  /** YOUR CODE ENDS HERE */
+    //RCLCPP_INFO(node_->get_logger(),
+    //            "Dijkstra: Path found!");
+  return path_found;
 }
 
 void DijkstraGlobalPlanner::fromWorldToGrid(float &x, float &y) {
